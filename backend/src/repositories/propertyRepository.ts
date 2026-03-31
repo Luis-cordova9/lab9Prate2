@@ -36,7 +36,7 @@ import type { Property, PropertyFilters, CreatePropertyInput, UpdatePropertyInpu
 // =============================================================================
 
 const adapter = new PrismaBetterSqlite3({ url: 'file:./prisma/dev.db' });
-const prisma = new PrismaClient({ adapter });
+export const prisma = new PrismaClient({ adapter });
 
 // =============================================================================
 // TIPOS INTERNOS

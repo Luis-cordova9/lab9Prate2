@@ -5,11 +5,18 @@
 //
 // ## Diseño RESTful
 // Seguimos convenciones REST para los endpoints:
-// - GET /api/properties - Listar todas (con paginación)
-// - GET /api/properties/:id - Obtener una
-// - POST /api/properties - Crear nueva
-// - PUT /api/properties/:id - Actualizar
-// - DELETE /api/properties/:id - Eliminar
+// - GET /api/properties         - Listar todas (con paginación)
+// - GET /api/properties/stats   - Estadísticas agregadas  ← NUEVO
+// - GET /api/properties/:id     - Obtener una
+// - POST /api/properties        - Crear nueva
+// - PUT /api/properties/:id     - Actualizar
+// - DELETE /api/properties/:id  - Eliminar
+//
+// ## ⚠️  Orden de rutas - MUY IMPORTANTE
+// Express evalúa las rutas en el orden en que se declaran.
+// "/stats" debe ir ANTES que "/:id", porque de lo contrario Express
+// interpretaría la palabra "stats" como un valor de :id y nunca llegaría
+// al handler correcto.
 //
 // ## Express Router
 // Usamos Router() para modularizar las rutas.
@@ -20,6 +27,7 @@ import { Router } from 'express';
 import {
   getAllProperties,
   getPropertyById,
+  getPropertyStats,
   createProperty,
   updateProperty,
   deleteProperty,
@@ -63,6 +71,36 @@ const router = Router();
  */
 router.get('/', (req, res) => {
   void getAllProperties(req, res);
+});
+
+/**
+ * GET /api/properties/stats
+ * Devuelve estadísticas agregadas de todas las propiedades.
+ *
+ * ⚠️  Esta ruta debe declararse ANTES de /:id para que Express no confunda
+ * la cadena "stats" con un valor de parámetro dinámico.
+ *
+ * Respuesta:
+ * {
+ *   success: true,
+ *   data: {
+ *     total: 35,
+ *     priceRange: { min: 50000, max: 2000000 },
+ *     byType: {
+ *       house:     { count: 10, avgPrice: 350000, minPrice: 120000, maxPrice: 800000 },
+ *       apartment: { count: 15, avgPrice: 180000, minPrice: 50000,  maxPrice: 450000 },
+ *       land:      { count: 5,  avgPrice: 95000,  minPrice: 30000,  maxPrice: 200000 },
+ *       office:    { count: 3,  avgPrice: 220000, minPrice: 80000,  maxPrice: 500000 },
+ *       commercial: { count: 2, avgPrice: 410000, minPrice: 300000, maxPrice: 520000 }
+ *     }
+ *   }
+ * }
+ *
+ * Nota: byType estará vacío ({}) si la base de datos no tiene propiedades.
+ * No lanza error en base de datos vacía.
+ */
+router.get('/stats', (req, res) => {
+  void getPropertyStats(req, res);
 });
 
 /**

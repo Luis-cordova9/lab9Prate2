@@ -1,120 +1,153 @@
-# Parte 1: Paginación y Metadata — RealEstate Hub API
+# Parte 2 — Property Statistics
 
+## Descripción
+
+Se implementó un endpoint de estadísticas agregadas para el API de RealEstate Hub. Permite a los administradores obtener métricas útiles sobre las propiedades sin tener que procesar los datos en el cliente.
+
+---
+
+## Endpoint
+
+```
+GET /api/properties/stats
+```
+
+No requiere parámetros ni autenticación.
+
+---
+
+## Ejemplo de respuesta
+
+```json
+{
+  "success": true,
+  "data": {
+    "total": 35,
+    "priceRange": {
+      "min": 50000,
+      "max": 2000000
+    },
+    "byType": {
+      "house": {
+        "count": 10,
+        "avgPrice": 350000,
+        "minPrice": 120000,
+        "maxPrice": 800000
+      },
+      "apartment": {
+        "count": 15,
+        "avgPrice": 180000,
+        "minPrice": 50000,
+        "maxPrice": 450000
+      },
+      "land": {
+        "count": 5,
+        "avgPrice": 95000,
+        "minPrice": 30000,
+        "maxPrice": 200000
+      }
+    }
+  }
+}
+```
+
+---
+
+## Campos de la respuesta
+
+| Campo | Tipo | Descripción |
+|---|---|---|
+| `total` | number | Total de propiedades en la base de datos |
+| `priceRange.min` | number | Precio más bajo de todas las propiedades |
+| `priceRange.max` | number | Precio más alto de todas las propiedades |
+| `byType` | object | Métricas agrupadas por `propertyType` |
+| `byType[tipo].count` | number | Cantidad de propiedades de ese tipo |
+| `byType[tipo].avgPrice` | number | Precio promedio de ese tipo |
+| `byType[tipo].minPrice` | number | Precio mínimo de ese tipo |
+| `byType[tipo].maxPrice` | number | Precio máximo de ese tipo |
+
+---
 
 ## Archivos modificados
 
-| Archivo | Cambio |
+### `src/controllers/propertyController.ts`
+Se agregó la función `getPropertyStats` que realiza dos queries a Prisma:
+
+**1. `prisma.property.aggregate`** — obtiene el total global y el rango de precios en una sola query:
+```ts
+const globalStats = await prisma.property.aggregate({
+  _count: { id: true },
+  _min:   { price: true },
+  _max:   { price: true },
+});
+```
+
+**2. `prisma.property.groupBy`** — agrupa por `propertyType` y calcula métricas por grupo:
+```ts
+const groupedStats = await prisma.property.groupBy({
+  by: ['propertyType'],
+  _count: { id: true },
+  _avg:   { price: true },
+  _min:   { price: true },
+  _max:   { price: true },
+});
+```
+
+El resultado del `groupBy` (array) se transforma en un objeto indexado por tipo para facilitar su consumo en el frontend.
+
+### `src/routes/propertyRoutes.ts`
+Se agregó la ruta `/stats` **antes** de `/:id`. Este orden es crítico: si se declarara después, Express interpretaría la cadena `"stats"` como un valor del parámetro dinámico `:id` y nunca llegaría al handler correcto.
+
+```ts
+router.get('/stats', (req, res) => {
+  void getPropertyStats(req, res);
+});
+
+router.get('/:id', (req, res) => { // debe ir después de /stats
+  void getPropertyById(req, res);
+});
+```
+
+---
+
+## Criterios de aceptación
+
+| Criterio | Estado |
 |---|---|
-| `src/controllers/propertyController.ts` | Lógica de paginación, validación y metadata |
-| `src/routes/propertyRoutes.ts` | Documentación actualizada del endpoint |
+| `GET /api/properties/stats` retorna datos | ✅ |
+| Count por tipo (`{ house: 10, apartment: 15, ... }`) | ✅ |
+| Precio promedio por tipo | ✅ |
+| Rango de precios global (`min` / `max`) | ✅ |
+| Total de propiedades | ✅ |
+| Usa `groupBy` y `aggregate` de Prisma | ✅ |
+| Base de datos vacía retorna ceros, no error | ✅ |
 
 ---
 
-## Cómo usar el endpoint
+## Comportamiento con base de datos vacía
 
-### URL base
-```
-GET http://localhost:3002/api/properties
-```
+Cuando no hay propiedades registradas, Prisma devuelve `null` en los campos numéricos de `aggregate`. El controlador los convierte a `0` usando el operador `?? 0`, por lo que la respuesta es:
 
-### Query params disponibles
-
-| Parámetro | Tipo | Default | Descripción |
-|---|---|---|---|
-| `page` | entero positivo | `1` | Página a mostrar |
-| `limit` | entero positivo | `10` | Resultados por página |
-| `search` | string | — | Búsqueda por texto |
-| `propertyType` | string | — | Filtro por tipo de propiedad |
-| `operationType` | string | — | Filtro por tipo de operación |
-| `minPrice` | número | — | Precio mínimo |
-| `maxPrice` | número | — | Precio máximo |
-| `minBedrooms` | número | — | Habitaciones mínimas |
-| `city` | string | — | Filtro por ciudad |
-
----
-
-## Ejemplos de uso
-
-### Defaults (sin parámetros)
-```
-GET /api/properties
-```
 ```json
 {
   "success": true,
-  "data": [...],
-  "meta": {
-    "total": 42,
-    "page": 1,
-    "limit": 10,
-    "pages": 5
+  "data": {
+    "total": 0,
+    "priceRange": { "min": 0, "max": 0 },
+    "byType": {}
   }
 }
 ```
 
-### Página específica con límite
-```
-GET /api/properties?page=2&limit=5
-```
-```json
-{
-  "success": true,
-  "data": [...],
-  "meta": {
-    "total": 42,
-    "page": 2,
-    "limit": 5,
-    "pages": 9
-  }
-}
-```
-
-### Página fuera de rango → retorna array vacío, no error
-```
-GET /api/properties?page=999&limit=10
-```
-```json
-{
-  "success": true,
-  "data": [],
-  "meta": {
-    "total": 42,
-    "page": 999,
-    "limit": 10,
-    "pages": 5
-  }
-}
-```
-
-### Valor inválido → error 400
-```
-GET /api/properties?page=-1&limit=10
-GET /api/properties?page=abc&limit=10
-```
-```json
-{
-  "success": false,
-  "error": {
-    "message": "Los parámetros \"page\" y \"limit\" deben ser enteros positivos",
-    "code": "INVALID_PAGINATION"
-  }
-}
-```
+No se lanza ningún error.
 
 ---
 
-## Lógica implementada
+## Decisión de diseño
 
-```
-total  = cantidad de propiedades que coinciden con los filtros
-pages  = Math.ceil(total / limit)
-skip   = (page - 1) * limit
-data   = propiedades[skip ... skip + limit]
-```
+Las operaciones `groupBy` y `aggregate` se implementaron directamente en el controlador usando Prisma, en lugar de añadirlas al `propertyRepository`. Esto se debe a que son operaciones de **analytics/reporting** que no forman parte del contrato CRUD del repositorio. Mezclarlas generaría un repositorio con responsabilidades mixtas. En un proyecto más grande se crearía un `statsRepository` separado.
 
-Si `skip >= total` → `data = []` (página fuera de rango, sin lanzar error).
+## Se uso brave en la prueba 
 
----
 ## Video 
-
-https://youtu.be/HXyVsHNigvs
+https://youtu.be/cFxcn0oCnA4

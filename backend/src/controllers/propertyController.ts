@@ -26,7 +26,7 @@
 import type { Request, Response } from 'express';
 import { createPropertySchema, updatePropertySchema, type PropertyFilters } from '../types/property.js';
 import { propertyRepository } from '../repositories/propertyRepository.js';
-
+import { prisma } from '../repositories/propertyRepository.js';
 // =============================================================================
 // GET /api/properties - Listar propiedades con filtros y paginación
 // =============================================================================
@@ -123,6 +123,69 @@ export async function getAllProperties(req: Request, res: Response): Promise<voi
   }
 }
 
+
+// =============================================================================
+
+export async function getPropertyStats(req: Request, res: Response): Promise<void> {
+  try {
+   
+    const globalStats = await prisma.property.aggregate({
+      _count: { id: true },
+      _min:   { price: true },
+      _max:   { price: true },
+    });
+
+    const total    = globalStats._count.id    ?? 0;
+    const minPrice = globalStats._min.price   ?? 0;
+    const maxPrice = globalStats._max.price   ?? 0;
+    const groupedStats = await prisma.property.groupBy({
+      by: ['propertyType'],
+      _count: { id: true },
+      _avg:   { price: true },
+      _min:   { price: true },
+      _max:   { price: true },
+    });
+
+    const byType: Record<string, {
+      count:    number;
+      avgPrice: number;
+      minPrice: number;
+      maxPrice: number;
+    }> = {};
+
+    for (const group of groupedStats) {
+      byType[group.propertyType] = {
+        count:    group._count.id       ?? 0,
+        avgPrice: group._avg.price      ?? 0,
+        minPrice: group._min.price      ?? 0,
+        maxPrice: group._max.price      ?? 0,
+      };
+    }
+
+  
+    res.json({
+      success: true,
+      data: {
+        total,
+        priceRange: {
+          min: minPrice,
+          max: maxPrice,
+        },
+        byType,   
+      },
+    });
+  } catch (error) {
+    console.error('Error al obtener estadísticas:', error);
+    res.status(500).json({
+      success: false,
+      error: {
+        message: 'Error interno del servidor',
+        code: 'INTERNAL_ERROR',
+      },
+    });
+  }
+}
+
 // =============================================================================
 // GET /api/properties/:id - Obtener una propiedad por ID
 // =============================================================================
@@ -162,9 +225,7 @@ export async function getPropertyById(req: Request, res: Response): Promise<void
 
 // =============================================================================
 // POST /api/properties - Crear una nueva propiedad
-// =============================================================================
-// Reemplaza: localStorage.setItem('properties', ...)
-// =============================================================================
+// =================================================================
 
 export async function createProperty(req: Request, res: Response): Promise<void> {
   try {
@@ -200,9 +261,6 @@ export async function createProperty(req: Request, res: Response): Promise<void>
   }
 }
 
-// =============================================================================
-// PUT /api/properties/:id - Actualizar una propiedad
-// =============================================================================
 
 export async function updateProperty(req: Request, res: Response): Promise<void> {
   try {
